@@ -1,115 +1,172 @@
 import { Hono } from "hono";
-import { x402ResourceServer } from "@x402/core/server";
+import { paymentMiddleware, x402ResourceServer } from "@x402/hono";
+import { HTTPFacilitatorClient } from "@x402/core/server";
 import { ExactEvmScheme } from "@x402/evm/exact/server";
-import { createCdpFacilitatorClient } from "@coinbase/cdp-sdk/x402";
 
 const app = new Hono();
 
-const VEGETABLES = {
+/*
+ * ============================================================
+ * BASENAME CLUB — AGENTIC PACKAGE CONFIG
+ * ============================================================
+ *
+ * For future packages, this section should be the main thing
+ * we change. The payment engine below stays reusable.
+ */
+const AGENT = {
   name: "Project Vegetables",
   basename: "vegetables.base.eth",
   agentId: 95581,
-  payTo: "0x5549EF31863DCD74BE3C5872eF19A3EFC27Cf169"
+
+  payTo: "0x5549EF31863DCD74BE3C5872eF19A3EFC27Cf169",
+
+  network: "eip155:8453",
+  price: "$0.01",
+
+  facilitatorUrl: "https://x402.org/facilitator"
 };
 
-const NETWORK = "eip155:8453";
-const PRICE = "$0.01";
+/*
+ * ============================================================
+ * PAYMENT ENGINE
+ * ============================================================
+ */
+
+const facilitator = new HTTPFacilitatorClient({
+  url: AGENT.facilitatorUrl
+});
+
+const paymentServer = new x402ResourceServer(facilitator).register(
+  AGENT.network,
+  new ExactEvmScheme()
+);
+
+/*
+ * ============================================================
+ * PUBLIC ENDPOINTS
+ * ============================================================
+ */
 
 app.get("/", (c) =>
   c.json({
-    service: "Project Vegetables x402 Diagnostic",
-    basename: VEGETABLES.basename,
-    erc8004Agent: VEGETABLES.agentId,
-    network: NETWORK,
-    price: PRICE,
-    status: "diagnostic"
+    service: `${AGENT.name} x402 Server`,
+    packageType: "Basename Club Agentic Package",
+    basename: AGENT.basename,
+    erc8004Agent: AGENT.agentId,
+    network: AGENT.network,
+    paymentAsset: "USDC",
+    price: AGENT.price,
+    paidEndpoint: "/premium",
+    recipient: AGENT.payTo,
+    facilitator: AGENT.facilitatorUrl,
+    status: "ready"
   })
 );
 
 app.get("/health", (c) =>
   c.json({
     ok: true,
-    service: "projectvegetables-x402"
+    service: "projectvegetables-x402",
+    basename: AGENT.basename
   })
 );
 
-app.get("/crypto-test", (c) => {
-  const result = {
-    globalCryptoExists: typeof globalThis.crypto !== "undefined",
-    globalGetRandomValuesType:
-      typeof globalThis.crypto?.getRandomValues,
-    randomUUIDType:
-      typeof globalThis.crypto?.randomUUID
-  };
+/*
+ * Useful repeatable package metadata.
+ */
+app.get("/package", (c) =>
+  c.json({
+    name: AGENT.name,
+    basename: AGENT.basename,
+    erc8004Agent: AGENT.agentId,
 
-  try {
-    const bytes = new Uint8Array(8);
-    globalThis.crypto.getRandomValues(bytes);
+    capabilities: {
+      machinePayments: true,
+      protocol: "x402",
+      network: AGENT.network,
+      paymentAsset: "USDC",
+      paidResource: "/premium"
+    },
 
-    result.getRandomValuesWorks = true;
-    result.randomByteLength = bytes.length;
-  } catch (error) {
-    result.getRandomValuesWorks = false;
-    result.getRandomValuesError = String(error);
-  }
+    payment: {
+      price: AGENT.price,
+      recipient: AGENT.payTo
+    }
+  })
+);
 
-  return c.json(result);
-});
+/*
+ * ============================================================
+ * x402 PROTECTED RESOURCE
+ * ============================================================
+ */
 
-app.get("/facilitator-test", async (c) => {
-  try {
-    console.log("Creating CDP facilitator client...");
+app.use(
+  paymentMiddleware(
+    {
+      "GET /premium": {
+        accepts: [
+          {
+            scheme: "exact",
+            price: AGENT.price,
+            network: AGENT.network,
+            payTo: AGENT.payTo
+          }
+        ],
 
-    const facilitator = createCdpFacilitatorClient();
+        description:
+          "Paid Project Vegetables machine-readable resource",
 
-    console.log("CDP facilitator client created.");
+        mimeType: "application/json"
+      }
+    },
 
-    const server = new x402ResourceServer(facilitator).register(
-      NETWORK,
-      new ExactEvmScheme()
-    );
+    paymentServer
+  )
+);
 
-    console.log("x402 resource server created.");
+app.get("/premium", (c) =>
+  c.json({
+    paid: true,
 
-    await server.initialize();
+    provider: AGENT.name,
+    basename: AGENT.basename,
+    erc8004Agent: AGENT.agentId,
 
-    console.log("x402 resource server initialized.");
+    resource: {
+      type: "agentic-package-proof",
 
-    return c.json({
-      ok: true,
-      facilitatorCreated: true,
-      resourceServerCreated: true,
-      initialized: true,
-      network: NETWORK
-    });
-  } catch (error) {
-    console.error("Facilitator diagnostic failed:", error);
+      message:
+        "Payment verified. Project Vegetables released this x402-protected resource.",
 
-    return c.json(
-      {
-        ok: false,
-        errorName: error?.name ?? null,
-        errorMessage: error?.message ?? String(error),
-        causeName: error?.cause?.name ?? null,
-        causeMessage:
-          error?.cause?.message ??
-          (error?.cause ? String(error.cause) : null),
-        stack: error?.stack ?? null
-      },
-      500
-    );
-  }
-});
+      capabilities: [
+        "Basename identity",
+        "ERC-8004 agent identity",
+        "Machine-readable metadata",
+        "x402 machine payments"
+      ]
+    },
+
+    timestamp: new Date().toISOString()
+  })
+);
+
+/*
+ * ============================================================
+ * FALLBACKS
+ * ============================================================
+ */
 
 app.notFound((c) =>
   c.json(
     {
       error: "Not found",
+
       endpoints: [
         "/",
         "/health",
-        "/crypto-test",
-        "/facilitator-test"
+        "/package",
+        "/premium"
       ]
     },
     404
@@ -117,15 +174,12 @@ app.notFound((c) =>
 );
 
 app.onError((error, c) => {
-  console.error(
-    "Project Vegetables diagnostic error:",
-    error
-  );
+  console.error("Project Vegetables x402 error:", error);
 
   return c.json(
     {
       error: "Internal server error",
-      detail: error.message
+      detail: error?.message ?? String(error)
     },
     500
   );
