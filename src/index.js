@@ -1,66 +1,78 @@
 import { Hono } from "hono";
-import { paymentMiddlewareFromConfig } from "@x402/hono";
-import { HTTPFacilitatorClient } from "@x402/core/server";
+import { paymentMiddleware } from "@x402/hono";
+import {
+  x402ResourceServer,
+  HTTPFacilitatorClient
+} from "@x402/core/server";
+import { ExactEvmScheme } from "@x402/evm/exact/server";
 
 const app = new Hono();
+
+/*
+ * ============================================================
+ * BASENAME CLUB — AGENTIC PACKAGE CONFIG
+ * ============================================================
+ */
 
 const AGENT = {
   name: "Project Vegetables",
   basename: "vegetables.base.eth",
   agentId: 95581,
+
   payTo: "0x5549EF31863DCD74BE3C5872eF19A3EFC27Cf169",
+
   network: "eip155:8453",
   price: "$0.01",
+
   facilitatorUrl: "https://x402.org/facilitator"
 };
 
-const routes = {
-  "GET /premium": {
-    accepts: {
-      scheme: "exact",
-      price: AGENT.price,
-      network: AGENT.network,
-      payTo: AGENT.payTo
-    },
-    description:
-      "Paid Project Vegetables machine-readable resource",
-    mimeType: "application/json"
-  }
-};
+/*
+ * ============================================================
+ * x402 PAYMENT ENGINE
+ * ============================================================
+ *
+ * Remote facilitator over ordinary HTTP.
+ *
+ * Important:
+ * We register the EVM "exact" server scheme ourselves.
+ * We do NOT call server.initialize() here.
+ */
 
 const facilitator = new HTTPFacilitatorClient({
   url: AGENT.facilitatorUrl
 });
 
-/*
- * Important for Cloudflare Workers:
- * false = do NOT sync facilitator capabilities at startup.
- *
- * The facilitator is contacted only when the paid flow actually needs it.
- */
-app.use(
-  paymentMiddlewareFromConfig(
-    routes,
-    facilitator,
-    undefined,
-    undefined,
-    undefined,
-    false
-  )
+const paymentServer = new x402ResourceServer(facilitator);
+
+paymentServer.register(
+  AGENT.network,
+  new ExactEvmScheme()
 );
+
+/*
+ * ============================================================
+ * PUBLIC ENDPOINTS
+ * ============================================================
+ */
 
 app.get("/", (c) =>
   c.json({
     service: `${AGENT.name} x402 Server`,
     packageType: "Basename Club Agentic Package",
+
     basename: AGENT.basename,
     erc8004Agent: AGENT.agentId,
+
     network: AGENT.network,
     paymentAsset: "USDC",
     price: AGENT.price,
+
     paidEndpoint: "/premium",
     recipient: AGENT.payTo,
+
     facilitator: AGENT.facilitatorUrl,
+
     status: "ready"
   })
 );
@@ -78,13 +90,16 @@ app.get("/package", (c) =>
     name: AGENT.name,
     basename: AGENT.basename,
     erc8004Agent: AGENT.agentId,
+
     capabilities: {
       machinePayments: true,
       protocol: "x402",
+      scheme: "exact",
       network: AGENT.network,
       paymentAsset: "USDC",
       paidResource: "/premium"
     },
+
     payment: {
       price: AGENT.price,
       recipient: AGENT.payTo
@@ -92,26 +107,78 @@ app.get("/package", (c) =>
   })
 );
 
+/*
+ * ============================================================
+ * PROTECTED x402 RESOURCE
+ * ============================================================
+ */
+
+app.use(
+  paymentMiddleware(
+    {
+      "GET /premium": {
+        accepts: [
+          {
+            scheme: "exact",
+            price: AGENT.price,
+            network: AGENT.network,
+            payTo: AGENT.payTo
+          }
+        ],
+
+        description:
+          "Paid Project Vegetables machine-readable resource",
+
+        mimeType: "application/json"
+      }
+    },
+
+    paymentServer
+  )
+);
+
 app.get("/premium", (c) =>
   c.json({
     paid: true,
+
     provider: AGENT.name,
     basename: AGENT.basename,
     erc8004Agent: AGENT.agentId,
+
     resource: {
       type: "agentic-package-proof",
+
       message:
-        "Payment verified. Project Vegetables released this x402-protected resource."
+        "Payment verified. Project Vegetables released this x402-protected resource.",
+
+      capabilities: [
+        "Basename identity",
+        "ERC-8004 agent identity",
+        "Machine-readable metadata",
+        "x402 machine payments"
+      ]
     },
+
     timestamp: new Date().toISOString()
   })
 );
+
+/*
+ * ============================================================
+ * FALLBACKS
+ * ============================================================
+ */
 
 app.notFound((c) =>
   c.json(
     {
       error: "Not found",
-      endpoints: ["/", "/health", "/package", "/premium"]
+      endpoints: [
+        "/",
+        "/health",
+        "/package",
+        "/premium"
+      ]
     },
     404
   )
