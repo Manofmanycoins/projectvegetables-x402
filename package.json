@@ -1,6 +1,20 @@
 {
-  "name":"projectvegetables-x402","version":"1.0.0","private":true,"type":"module",
-  "scripts":{"deploy":"wrangler deploy","dev":"wrangler dev"},
-  "dependencies":{"@coinbase/x402":"^2.1.0","@x402/core":"^2.17.0","@x402/evm":"^2.17.0","@x402/hono":"^2.17.0","hono":"^4.12.14"},
-  "devDependencies":{"wrangler":"^4.0.0"}
+  "name": "projectvegetables-x402",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "deploy": "wrangler deploy",
+    "dev": "wrangler dev"
+  },
+  "dependencies": {
+    "@coinbase/cdp-sdk": "latest",
+    "@x402/core": "^2.27.0",
+    "@x402/evm": "^2.27.0",
+    "@x402/hono": "^2.27.0",
+    "hono": "^4.13.10"
+  },
+  "devDependencies": {
+    "wrangler": "^4.0.0"
+  }
 }
