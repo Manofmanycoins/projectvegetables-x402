@@ -1,11 +1,7 @@
 import { Hono } from "hono";
-import { paymentMiddleware } from "@x402/hono";
-import {
-  x402ResourceServer,
-  HTTPFacilitatorClient
-} from "@x402/core/server";
-import { registerExactEvmScheme } from "@x402/evm/exact/server";
-import { createFacilitatorConfig } from "@coinbase/x402";
+import { paymentMiddleware, x402ResourceServer } from "@x402/hono";
+import { ExactEvmScheme } from "@x402/evm/exact/server";
+import { createCdpFacilitatorClient } from "@coinbase/cdp-sdk/x402";
 
 const app = new Hono();
 
@@ -21,40 +17,22 @@ const PRICE = "$0.01";
 
 let cachedServer;
 
-function getPaymentServer(env) {
-  if (cachedServer) {
-    return cachedServer;
-  }
+function getPaymentServer() {
+  if (cachedServer) return cachedServer;
 
-  if (!env.CDP_API_KEY_ID || !env.CDP_API_KEY_SECRET) {
-    throw new Error("Missing CDP facilitator credentials");
-  }
+  const facilitator = createCdpFacilitatorClient();
 
-  const facilitator = createFacilitatorConfig(
-    env.CDP_API_KEY_ID,
-    env.CDP_API_KEY_SECRET
+  const server = new x402ResourceServer(facilitator).register(
+    NETWORK,
+    new ExactEvmScheme()
   );
 
-  const facilitatorClient =
-    new HTTPFacilitatorClient(facilitator);
-
-  const server =
-    new x402ResourceServer(facilitatorClient);
-
-  registerExactEvmScheme(server);
-
   cachedServer = server;
-
   return server;
 }
 
-
-// -----------------------------------------------------
-// PUBLIC STATUS
-// -----------------------------------------------------
-
-app.get("/", (c) => {
-  return c.json({
+app.get("/", (c) =>
+  c.json({
     service: "Project Vegetables x402 Server",
     basename: VEGETABLES.basename,
     erc8004Agent: VEGETABLES.agentId,
@@ -62,43 +40,20 @@ app.get("/", (c) => {
     paymentAsset: "USDC",
     price: PRICE,
     paidEndpoint: "/premium",
+    recipient: VEGETABLES.payTo,
     status: "ready"
-  });
-});
+  })
+);
 
-
-// -----------------------------------------------------
-// HEALTH CHECK
-// -----------------------------------------------------
-
-app.get("/health", (c) => {
-  return c.json({
+app.get("/health", (c) =>
+  c.json({
     ok: true,
     service: "projectvegetables-x402"
-  });
-});
+  })
+);
 
-
-// -----------------------------------------------------
-// x402 PAYMENT GATE
-// -----------------------------------------------------
-
-app.use("/premium", async (c, next) => {
-  let server;
-
-  try {
-    server = getPaymentServer(c.env);
-  } catch (error) {
-    return c.json(
-      {
-        error: "x402 facilitator is not configured",
-        detail: error.message
-      },
-      503
-    );
-  }
-
-  const middleware = paymentMiddleware(
+app.use(
+  paymentMiddleware(
     {
       "GET /premium": {
         accepts: [
@@ -114,19 +69,12 @@ app.use("/premium", async (c, next) => {
         mimeType: "application/json"
       }
     },
-    server
-  );
+    getPaymentServer()
+  )
+);
 
-  return middleware(c, next);
-});
-
-
-// -----------------------------------------------------
-// PAID RESOURCE
-// -----------------------------------------------------
-
-app.get("/premium", (c) => {
-  return c.json({
+app.get("/premium", (c) =>
+  c.json({
     paid: true,
     provider: VEGETABLES.name,
     basename: VEGETABLES.basename,
@@ -134,36 +82,27 @@ app.get("/premium", (c) => {
     message:
       "Payment verified. Project Vegetables released this x402-protected resource.",
     timestamp: new Date().toISOString()
-  });
-});
+  })
+);
 
-
-// -----------------------------------------------------
-// FALLBACKS
-// -----------------------------------------------------
-
-app.notFound((c) => {
-  return c.json(
+app.notFound((c) =>
+  c.json(
     {
       error: "Not found",
-      endpoints: [
-        "/",
-        "/health",
-        "/premium"
-      ]
+      endpoints: ["/", "/health", "/premium"]
     },
     404
-  );
-});
+  )
+);
 
-app.onError((error, c) => {
-  return c.json(
+app.onError((error, c) =>
+  c.json(
     {
       error: "Internal server error",
       detail: error.message
     },
     500
-  );
-});
+  )
+);
 
 export default app;
