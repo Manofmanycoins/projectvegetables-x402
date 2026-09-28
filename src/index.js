@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { paymentMiddleware, x402ResourceServer } from "@x402/hono";
+import { x402ResourceServer } from "@x402/core/server";
 import { ExactEvmScheme } from "@x402/evm/exact/server";
 import { createCdpFacilitatorClient } from "@coinbase/cdp-sdk/x402";
 
@@ -15,34 +15,29 @@ const VEGETABLES = {
 const NETWORK = "eip155:8453";
 const PRICE = "$0.01";
 
-let cachedServer;
+app.get("/", (c) =>
+  c.json({
+    service: "Project Vegetables x402 Diagnostic",
+    basename: VEGETABLES.basename,
+    erc8004Agent: VEGETABLES.agentId,
+    network: NETWORK,
+    price: PRICE,
+    status: "diagnostic"
+  })
+);
 
-function getPaymentServer() {
-  if (cachedServer) return cachedServer;
+app.get("/health", (c) =>
+  c.json({
+    ok: true,
+    service: "projectvegetables-x402"
+  })
+);
 
-  const facilitator = createCdpFacilitatorClient();
-
-  const server = new x402ResourceServer(facilitator).register(
-    NETWORK,
-    new ExactEvmScheme()
-  );
-
-  cachedServer = server;
-  return server;
-}
-
-/*
- * Temporary Cloudflare crypto diagnostic.
- * This does NOT expose secrets and does NOT make a payment.
- */
 app.get("/crypto-test", (c) => {
   const result = {
     globalCryptoExists: typeof globalThis.crypto !== "undefined",
     globalGetRandomValuesType:
       typeof globalThis.crypto?.getRandomValues,
-    cryptoExists: typeof crypto !== "undefined",
-    cryptoGetRandomValuesType:
-      typeof crypto?.getRandomValues,
     randomUUIDType:
       typeof globalThis.crypto?.randomUUID
   };
@@ -61,72 +56,71 @@ app.get("/crypto-test", (c) => {
   return c.json(result);
 });
 
-app.get("/", (c) =>
-  c.json({
-    service: "Project Vegetables x402 Server",
-    basename: VEGETABLES.basename,
-    erc8004Agent: VEGETABLES.agentId,
-    network: NETWORK,
-    paymentAsset: "USDC",
-    price: PRICE,
-    paidEndpoint: "/premium",
-    recipient: VEGETABLES.payTo,
-    status: "ready"
-  })
-);
+app.get("/facilitator-test", async (c) => {
+  try {
+    console.log("Creating CDP facilitator client...");
 
-app.get("/health", (c) =>
-  c.json({
-    ok: true,
-    service: "projectvegetables-x402"
-  })
-);
+    const facilitator = createCdpFacilitatorClient();
 
-app.use(
-  paymentMiddleware(
-    {
-      "GET /premium": {
-        accepts: [
-          {
-            scheme: "exact",
-            price: PRICE,
-            network: NETWORK,
-            payTo: VEGETABLES.payTo
-          }
-        ],
-        description:
-          "Paid Project Vegetables machine-readable proof",
-        mimeType: "application/json"
-      }
-    },
-    getPaymentServer()
-  )
-);
+    console.log("CDP facilitator client created.");
 
-app.get("/premium", (c) =>
-  c.json({
-    paid: true,
-    provider: VEGETABLES.name,
-    basename: VEGETABLES.basename,
-    erc8004Agent: VEGETABLES.agentId,
-    message:
-      "Payment verified. Project Vegetables released this x402-protected resource.",
-    timestamp: new Date().toISOString()
-  })
-);
+    const server = new x402ResourceServer(facilitator).register(
+      NETWORK,
+      new ExactEvmScheme()
+    );
+
+    console.log("x402 resource server created.");
+
+    await server.initialize();
+
+    console.log("x402 resource server initialized.");
+
+    return c.json({
+      ok: true,
+      facilitatorCreated: true,
+      resourceServerCreated: true,
+      initialized: true,
+      network: NETWORK
+    });
+  } catch (error) {
+    console.error("Facilitator diagnostic failed:", error);
+
+    return c.json(
+      {
+        ok: false,
+        errorName: error?.name ?? null,
+        errorMessage: error?.message ?? String(error),
+        causeName: error?.cause?.name ?? null,
+        causeMessage:
+          error?.cause?.message ??
+          (error?.cause ? String(error.cause) : null),
+        stack: error?.stack ?? null
+      },
+      500
+    );
+  }
+});
 
 app.notFound((c) =>
   c.json(
     {
       error: "Not found",
-      endpoints: ["/", "/health", "/crypto-test", "/premium"]
+      endpoints: [
+        "/",
+        "/health",
+        "/crypto-test",
+        "/facilitator-test"
+      ]
     },
     404
   )
 );
 
 app.onError((error, c) => {
-  console.error("Project Vegetables x402 error:", error);
+  console.error(
+    "Project Vegetables diagnostic error:",
+    error
+  );
 
   return c.json(
     {
