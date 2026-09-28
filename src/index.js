@@ -1,10 +1,14 @@
 import { Hono } from "hono";
 import { paymentMiddleware } from "@x402/hono";
+
 import {
   x402ResourceServer,
   HTTPFacilitatorClient
 } from "@x402/core/server";
-import { ExactEvmScheme } from "@x402/evm/exact/server";
+
+import {
+  registerExactEvmScheme
+} from "@x402/evm/exact/server";
 
 const app = new Hono();
 
@@ -31,12 +35,6 @@ const AGENT = {
  * ============================================================
  * x402 PAYMENT ENGINE
  * ============================================================
- *
- * Remote facilitator over ordinary HTTP.
- *
- * Important:
- * We register the EVM "exact" server scheme ourselves.
- * We do NOT call server.initialize() here.
  */
 
 const facilitator = new HTTPFacilitatorClient({
@@ -45,10 +43,11 @@ const facilitator = new HTTPFacilitatorClient({
 
 const paymentServer = new x402ResourceServer(facilitator);
 
-paymentServer.register(
-  AGENT.network,
-  new ExactEvmScheme()
-);
+/*
+ * Register the exact EVM payment scheme using the package helper.
+ * This is intended to cover EVM networks such as Base.
+ */
+registerExactEvmScheme(paymentServer);
 
 /*
  * ============================================================
