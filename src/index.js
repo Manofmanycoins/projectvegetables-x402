@@ -1,51 +1,53 @@
 import { Hono } from "hono";
-import { paymentMiddleware, x402ResourceServer } from "@x402/hono";
+import { paymentMiddlewareFromConfig } from "@x402/hono";
 import { HTTPFacilitatorClient } from "@x402/core/server";
-import { ExactEvmScheme } from "@x402/evm/exact/server";
 
 const app = new Hono();
 
-/*
- * ============================================================
- * BASENAME CLUB — AGENTIC PACKAGE CONFIG
- * ============================================================
- *
- * For future packages, this section should be the main thing
- * we change. The payment engine below stays reusable.
- */
 const AGENT = {
   name: "Project Vegetables",
   basename: "vegetables.base.eth",
   agentId: 95581,
-
   payTo: "0x5549EF31863DCD74BE3C5872eF19A3EFC27Cf169",
-
   network: "eip155:8453",
   price: "$0.01",
-
   facilitatorUrl: "https://x402.org/facilitator"
 };
 
-/*
- * ============================================================
- * PAYMENT ENGINE
- * ============================================================
- */
+const routes = {
+  "GET /premium": {
+    accepts: {
+      scheme: "exact",
+      price: AGENT.price,
+      network: AGENT.network,
+      payTo: AGENT.payTo
+    },
+    description:
+      "Paid Project Vegetables machine-readable resource",
+    mimeType: "application/json"
+  }
+};
 
 const facilitator = new HTTPFacilitatorClient({
   url: AGENT.facilitatorUrl
 });
 
-const paymentServer = new x402ResourceServer(facilitator).register(
-  AGENT.network,
-  new ExactEvmScheme()
-);
-
 /*
- * ============================================================
- * PUBLIC ENDPOINTS
- * ============================================================
+ * Important for Cloudflare Workers:
+ * false = do NOT sync facilitator capabilities at startup.
+ *
+ * The facilitator is contacted only when the paid flow actually needs it.
  */
+app.use(
+  paymentMiddlewareFromConfig(
+    routes,
+    facilitator,
+    undefined,
+    undefined,
+    undefined,
+    false
+  )
+);
 
 app.get("/", (c) =>
   c.json({
@@ -71,15 +73,11 @@ app.get("/health", (c) =>
   })
 );
 
-/*
- * Useful repeatable package metadata.
- */
 app.get("/package", (c) =>
   c.json({
     name: AGENT.name,
     basename: AGENT.basename,
     erc8004Agent: AGENT.agentId,
-
     capabilities: {
       machinePayments: true,
       protocol: "x402",
@@ -87,7 +85,6 @@ app.get("/package", (c) =>
       paymentAsset: "USDC",
       paidResource: "/premium"
     },
-
     payment: {
       price: AGENT.price,
       recipient: AGENT.payTo
@@ -95,79 +92,26 @@ app.get("/package", (c) =>
   })
 );
 
-/*
- * ============================================================
- * x402 PROTECTED RESOURCE
- * ============================================================
- */
-
-app.use(
-  paymentMiddleware(
-    {
-      "GET /premium": {
-        accepts: [
-          {
-            scheme: "exact",
-            price: AGENT.price,
-            network: AGENT.network,
-            payTo: AGENT.payTo
-          }
-        ],
-
-        description:
-          "Paid Project Vegetables machine-readable resource",
-
-        mimeType: "application/json"
-      }
-    },
-
-    paymentServer
-  )
-);
-
 app.get("/premium", (c) =>
   c.json({
     paid: true,
-
     provider: AGENT.name,
     basename: AGENT.basename,
     erc8004Agent: AGENT.agentId,
-
     resource: {
       type: "agentic-package-proof",
-
       message:
-        "Payment verified. Project Vegetables released this x402-protected resource.",
-
-      capabilities: [
-        "Basename identity",
-        "ERC-8004 agent identity",
-        "Machine-readable metadata",
-        "x402 machine payments"
-      ]
+        "Payment verified. Project Vegetables released this x402-protected resource."
     },
-
     timestamp: new Date().toISOString()
   })
 );
-
-/*
- * ============================================================
- * FALLBACKS
- * ============================================================
- */
 
 app.notFound((c) =>
   c.json(
     {
       error: "Not found",
-
-      endpoints: [
-        "/",
-        "/health",
-        "/package",
-        "/premium"
-      ]
+      endpoints: ["/", "/health", "/package", "/premium"]
     },
     404
   )
