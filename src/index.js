@@ -31,6 +31,36 @@ function getPaymentServer() {
   return server;
 }
 
+/*
+ * Temporary Cloudflare crypto diagnostic.
+ * This does NOT expose secrets and does NOT make a payment.
+ */
+app.get("/crypto-test", (c) => {
+  const result = {
+    globalCryptoExists: typeof globalThis.crypto !== "undefined",
+    globalGetRandomValuesType:
+      typeof globalThis.crypto?.getRandomValues,
+    cryptoExists: typeof crypto !== "undefined",
+    cryptoGetRandomValuesType:
+      typeof crypto?.getRandomValues,
+    randomUUIDType:
+      typeof globalThis.crypto?.randomUUID
+  };
+
+  try {
+    const bytes = new Uint8Array(8);
+    globalThis.crypto.getRandomValues(bytes);
+
+    result.getRandomValuesWorks = true;
+    result.randomByteLength = bytes.length;
+  } catch (error) {
+    result.getRandomValuesWorks = false;
+    result.getRandomValuesError = String(error);
+  }
+
+  return c.json(result);
+});
+
 app.get("/", (c) =>
   c.json({
     service: "Project Vegetables x402 Server",
@@ -89,20 +119,22 @@ app.notFound((c) =>
   c.json(
     {
       error: "Not found",
-      endpoints: ["/", "/health", "/premium"]
+      endpoints: ["/", "/health", "/crypto-test", "/premium"]
     },
     404
   )
 );
 
-app.onError((error, c) =>
-  c.json(
+app.onError((error, c) => {
+  console.error("Project Vegetables x402 error:", error);
+
+  return c.json(
     {
       error: "Internal server error",
       detail: error.message
     },
     500
-  )
-);
+  );
+});
 
 export default app;
