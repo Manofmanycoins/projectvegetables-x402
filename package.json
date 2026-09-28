@@ -8,10 +8,11 @@
     "dev": "wrangler dev"
   },
   "dependencies": {
-    "@coinbase/cdp-sdk": "latest",
+    "@coinbase/cdp-sdk": "1.57.0",
     "@x402/core": "^2.27.0",
     "@x402/evm": "^2.27.0",
     "@x402/hono": "^2.27.0",
+    "@x402/svm": "^2.27.0",
     "hono": "^4.13.10"
   },
   "devDependencies": {
