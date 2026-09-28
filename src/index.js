@@ -25,7 +25,12 @@ const AGENT = {
 
   payTo: "0x5549EF31863DCD74BE3C5872eF19A3EFC27Cf169",
 
-  network: "eip155:8453",
+  /*
+   * Base Sepolia testnet.
+   * CAIP-2 format is preferred by the current x402 SDK.
+   */
+  network: "eip155:84532",
+
   price: "$0.01",
 
   facilitatorUrl: "https://x402.org/facilitator"
@@ -44,8 +49,8 @@ const facilitator = new HTTPFacilitatorClient({
 const paymentServer = new x402ResourceServer(facilitator);
 
 /*
- * Register the exact EVM payment scheme using the package helper.
- * This is intended to cover EVM networks such as Base.
+ * Register EVM exact-payment support.
+ * This enables Base Sepolia and other EVM networks.
  */
 registerExactEvmScheme(paymentServer);
 
@@ -63,7 +68,10 @@ app.get("/", (c) =>
     basename: AGENT.basename,
     erc8004Agent: AGENT.agentId,
 
+    environment: "testnet",
     network: AGENT.network,
+    networkName: "Base Sepolia",
+
     paymentAsset: "USDC",
     price: AGENT.price,
 
@@ -80,7 +88,8 @@ app.get("/health", (c) =>
   c.json({
     ok: true,
     service: "projectvegetables-x402",
-    basename: AGENT.basename
+    basename: AGENT.basename,
+    network: AGENT.network
   })
 );
 
@@ -89,6 +98,8 @@ app.get("/package", (c) =>
     name: AGENT.name,
     basename: AGENT.basename,
     erc8004Agent: AGENT.agentId,
+
+    environment: "testnet",
 
     capabilities: {
       machinePayments: true,
@@ -108,7 +119,7 @@ app.get("/package", (c) =>
 
 /*
  * ============================================================
- * PROTECTED x402 RESOURCE
+ * x402 PROTECTED RESOURCE
  * ============================================================
  */
 
@@ -143,6 +154,9 @@ app.get("/premium", (c) =>
     provider: AGENT.name,
     basename: AGENT.basename,
     erc8004Agent: AGENT.agentId,
+
+    environment: "testnet",
+    network: AGENT.network,
 
     resource: {
       type: "agentic-package-proof",
